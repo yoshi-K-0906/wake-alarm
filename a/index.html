@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>おはようアラーム</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#24312c;background:#f3f6f2}
+*{box-sizing:border-box} body{margin:0;padding:24px 14px 40px}
+main{max-width:720px;margin:0 auto}
+header{margin:8px 0 22px} h1{font-size:clamp(1.6rem,5vw,2.2rem);margin:0 0 8px}
+.sub{color:#637169;margin:0}
+.card{background:#fff;border:1px solid #dce5dd;border-radius:18px;padding:20px;margin:14px 0;box-shadow:0 4px 18px #20372b0a}
+h2{font-size:1.1rem;margin:0 0 14px}
+label{display:block;font-weight:650;margin:12px 0 6px}
+input[type=time],input[type=number]{font:inherit;border:1px solid #b9c8bd;border-radius:10px;padding:10px;background:#fff;color:inherit}
+input[type=time]{font-size:1.25rem;width:100%;max-width:230px}
+input[type=number]{width:100px}
+.weekdays{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.weekdays label{margin:0;font-weight:500;border:1px solid #d5dfd7;border-radius:10px;padding:8px 10px;display:flex;gap:6px;align-items:center}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+button{font:inherit;font-weight:700;border:0;border-radius:12px;padding:12px 16px;cursor:pointer}
+.primary{background:#286a4b;color:white}.secondary{background:#e8eee9;color:#24312c}.danger{background:#a82e2e;color:white}
+button:disabled{opacity:.5;cursor:not-allowed}
+.status{border-radius:12px;padding:12px;background:#edf4ee;line-height:1.6}
+#clock{font-size:1.7rem;font-weight:750;font-variant-numeric:tabular-nums}
+#alarmPanel{display:none;border:2px solid #c94d37;background:#fff3ef}
+#alarmPanel.active{display:block}
+#alarmTitle{font-size:1.35rem;font-weight:800;color:#a83222}
+#question{font-size:1.5rem;font-weight:800;margin:12px 0}
+#answer{width:150px;font-size:1.2rem}
+.small{font-size:.9rem;color:#65736a;line-height:1.65}
+#log{padding-left:20px;margin-bottom:0} #log li{margin:5px 0}
+footer{font-size:.85rem;color:#65736a;line-height:1.7;margin-top:18px}
+@media(max-width:480px){body{padding:16px 10px 30px}.card{padding:16px}.actions button{width:100%}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>おはようアラーム</h1>
+  <p class="sub">予備アラームで少しずつ起きて、本アラームでしっかり起床。</p>
+</header>
+
+<section class="card">
+  <h2>1. 起床設定</h2>
+  <div id="clock">--:--:--</div>
+  <label for="wakeTime">起床したい時刻</label>
+  <input id="wakeTime" type="time" value="07:00">
+  <label>鳴らす曜日</label>
+  <div class="weekdays" id="weekdayChoices">
+    <label><input type="checkbox" value="1" checked>月</label>
+    <label><input type="checkbox" value="2" checked>火</label>
+    <label><input type="checkbox" value="3" checked>水</label>
+    <label><input type="checkbox" value="4" checked>木</label>
+    <label><input type="checkbox" value="5" checked>金</label>
+    <label><input type="checkbox" value="6" checked>土</label>
+    <label><input type="checkbox" value="0" checked>日</label>
+  </div>
+  <label for="volume">音量（試作版）</label>
+  <input id="volume" type="range" min="0" max="100" value="55" style="width:100%;max-width:300px">
+  <span id="volumeText">55%</span>
+  <div class="actions">
+    <button class="primary" id="saveBtn">設定を保存して開始</button>
+    <button class="secondary" id="testBtn">音をテスト</button>
+    <button class="secondary" id="stopTestBtn">テスト音を停止</button>
+  </div>
+  <p class="small">予備アラーム：起床時刻の30分前から5分間隔で6回（30・25・20・15・10・5分前）。</p>
+</section>
+
+<section class="card">
+  <h2>2. 今日の状態</h2>
+  <div class="status" id="status">設定を保存して開始してください。音を出すため、最初にボタンを押して操作を開始します。</div>
+  <div class="actions">
+    <button class="primary" id="upBtn">今日はもう起きた</button>
+    <button class="secondary" id="resetDayBtn">今日の起床済み状態を解除</button>
+  </div>
+</section>
+
+<section class="card" id="alarmPanel" aria-live="assertive">
+  <div id="alarmTitle">アラーム</div>
+  <p id="alarmMessage">アラームが鳴っています。</p>
+  <div id="mathArea" style="display:none">
+    <p>本アラームを止めるには、計算問題を3問連続で正解してください。</p>
+    <div id="question">-- + -- = ?</div>
+    <form id="answerForm">
+      <label for="answer">答え</label>
+      <input id="answer" type="number" inputmode="numeric" required>
+      <button class="primary" type="submit">回答する</button>
+    </form>
+    <p id="mathFeedback" role="status"></p>
+    <p>連続正解：<strong id="streak">0 / 3</strong></p>
+  </div>
+  <div class="actions" id="prelimArea" style="display:none">
+    <button class="primary" id="stopPrelimBtn">予備アラームを止める</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>3. 今日のアラーム予定</h2>
+  <ol id="schedule"><li>設定を保存すると予定が表示されます。</li></ol>
+</section>
+
+<section class="card">
+  <h2>4. 起床記録</h2>
+  <p class="small">このブラウザ内に記録します。</p>
+  <ul id="log"><li>まだ記録はありません。</li></ul>
+  <button class="secondary" id="clearLogBtn">記録を消去</button>
+</section>
+
+<footer>
+  <strong>試作版の注意：</strong>このページを開いたままにして使ってください。ページを閉じる、ブラウザを終了する、PCがスリープするなどの状態では、アラームが鳴らない・遅れる場合があります。スマートフォンの標準アラームの代わりとして使わないでください。音はブラウザの制限により、最初の操作後に再生されます。
+</footer>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const weekdayNames = ["日","月","火","水","木","金","土"];
+  const dateKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  };
+  let audioCtx = null, oscillator = null, gainNode = null, alarmInterval = null;
+  let activeAlarm = null, mathAnswer = null, streak = 0, alarmedKeys = new Set();
+  let saved = JSON.parse(localStorage.getItem("wakeAlarmSettings") || "null");
+  let completedDate = localStorage.getItem("wakeAlarmCompletedDate") || "";
+  let logEntries = JSON.parse(localStorage.getItem("wakeAlarmLog") || "[]");
+
+  function settingsFromUI() {
+    return {
+      wakeTime: $("wakeTime").value || "07:00",
+      weekdays: [...document.querySelectorAll('#weekdayChoices input:checked')].map(x => Number(x.value)),
+      volume: Number($("volume").value)
+    };
+  }
+  function applySettings(s) {
+    $("wakeTime").value = s.wakeTime || "07:00";
+    $("volume").value = s.volume ?? 55;
+    $("volumeText").textContent = `${$("volume").value}%`;
+    document.querySelectorAll('#weekdayChoices input').forEach(x => x.checked = (s.weekdays || [0,1,2,3,4,5,6]).includes(Number(x.value)));
+  }
+  function storeLog(message) {
+    const d = new Date();
+    logEntries.unshift(`${d.toLocaleDateString("ja-JP")} ${d.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit",second:"2-digit"})} — ${message}`);
+    logEntries = logEntries.slice(0,30);
+    localStorage.setItem("wakeAlarmLog", JSON.stringify(logEntries));
+    renderLog();
+  }
+  function renderLog() {
+    $("log").innerHTML = "";
+    if (!logEntries.length) { $("log").innerHTML = "<li>まだ記録はありません。</li>"; return; }
+    logEntries.forEach(s => { const li = document.createElement("li"); li.textContent = s; $("log").appendChild(li); });
+  }
+  function enableAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { alert("このブラウザでは音声機能を利用できません。ChromeまたはEdgeをお試しください。"); return false; }
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    return true;
+  }
+  function startSound() {
+    if (!enableAudio()) return;
+    stopSound();
+    oscillator = audioCtx.createOscillator();
+    gainNode = audioCtx.createGain();
+    oscillator.type = "sawtooth";
+    oscillator.frequency.value = 880;
+    gainNode.gain.value = (Number($("volume").value)/100) * 0.22;
+    oscillator.connect(gainNode); gainNode.connect(audioCtx.destination);
+    oscillator.start();
+    let high = true;
+    window._beepTimer = setInterval(() => {
+      if (oscillator) { oscillator.frequency.setValueAtTime(high ? 880 : 660, audioCtx.currentTime); high = !high; }
+    }, 500);
+  }
+  function stopSound() {
+    if (window._beepTimer) { clearInterval(window._beepTimer); window._beepTimer = null; }
+    if (oscillator) { try { oscillator.stop(); } catch(e) {} oscillator.disconnect(); oscillator = null; }
+    if (gainNode) { gainNode.disconnect(); gainNode = null; }
+  }
+  function minutesOfTime(t) { const [h,m] = t.split(":").map(Number); return h*60+m; }
+  function makeSchedule() {
+    const s = settingsFromUI(), wake = minutesOfTime(s.wakeTime);
+    const entries = [];
+    for (let mins = 30; mins >= 5; mins -= 5) {
+      let total = wake - mins;
+      total = (total + 1440) % 1440;
+      entries.push({time:`${String(Math.floor(total/60)).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`, type:"予備", offset:mins});
+    }
+    entries.push({time:s.wakeTime, type:"本アラーム", offset:0});
+    $("schedule").innerHTML = "";
+    entries.forEach(e => {
+      const li = document.createElement("li");
+      li.textContent = `${e.time} — ${e.type}${e.offset ? `（起床時刻の${e.offset}分前）` : "（計算問題3問）"}`;
+      $("schedule").appendChild(li);
+    });
+  }
+  function showStatus(msg) { $("status").textContent = msg; }
+  function startAlarm(type, timeKey) {
+    if (activeAlarm || completedDate === dateKey()) return;
+    activeAlarm = {type, timeKey};
+    $("alarmPanel").classList.add("active");
+    $("mathArea").style.display = type === "main" ? "block" : "none";
+    $("prelimArea").style.display = type === "prelim" ? "flex" : "none";
+    $("alarmTitle").textContent = type === "main" ? "本アラーム" : "予備アラーム";
+    $("alarmMessage").textContent = type === "main" ? "起床時刻です。計算問題を3問連続で正解してください。" : "予備アラームです。止めても本アラームは取り消されません。";
+    if (type === "main") { streak = 0; $("streak").textContent = "0 / 3"; $("mathFeedback").textContent = ""; newQuestion(); }
+    startSound();
+    showStatus(type === "main" ? "本アラームが作動中です。" : "予備アラームが作動中です。本アラームは予定どおり残っています。");
+  }
+  function newQuestion() {
+    const a = Math.floor(Math.random()*19)+2;
+    const b = Math.floor(Math.random()*19)+2;
+    const subtract = Math.random() < .35;
+    if (subtract) {
+      const high = Math.max(a,b), low = Math.min(a,b);
+      mathAnswer = high-low; $("question").textContent = `${high} − ${low} = ?`;
+    } else {
+      mathAnswer = a+b; $("question").textContent = `${a} + ${b} = ?`;
+    }
+    $("answer").value = "";
+    $("answer").focus();
+  }
+  function closeAlarm(message) {
+    stopSound(); activeAlarm = null;
+    $("alarmPanel").classList.remove("active");
+    showStatus(message);
+  }
+  function checkDueAlarms() {
+    const s = settingsFromUI(), now = new Date(), today = dateKey();
+    $("clock").textContent = now.toLocaleTimeString("ja-JP");
+    if (completedDate === today || !s.weekdays.includes(now.getDay()) || !s.wakeTime) return;
+    const nowMinute = now.getHours()*60+now.getMinutes();
+    const wake = minutesOfTime(s.wakeTime);
+    const currentStamp = `${today}-${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+    if (activeAlarm) return;
+    for (let offset=30; offset>=5; offset-=5) {
+      let due = (wake-offset+1440)%1440;
+      if (nowMinute === due && !alarmedKeys.has(`${today}-pre-${offset}`)) {
+        alarmedKeys.add(`${today}-pre-${offset}`);
+        startAlarm("prelim", `${today}-pre-${offset}`);
+        return;
+      }
+    }
+    if (nowMinute === wake && !alarmedKeys.has(`${today}-main`)) {
+      alarmedKeys.add(`${today}-main`);
+      startAlarm("main", `${today}-main`);
+      return;
+    }
+  }
+  $("saveBtn").addEventListener("click", () => {
+    if (!enableAudio()) return;
+    const s = settingsFromUI();
+    if (!s.weekdays.length) { alert("鳴らす曜日を1つ以上選んでください。"); return; }
+    localStorage.setItem("wakeAlarmSettings", JSON.stringify(s));
+    makeSchedule();
+    showStatus(`設定を保存しました。起床時刻は ${s.wakeTime} です。予定時刻に鳴らすには、このページを開いたままにしてください。`);
+    storeLog(`設定を保存（起床 ${s.wakeTime}）`);
+  });
+  $("testBtn").addEventListener("click", () => { if (enableAudio()) { startSound(); showStatus("テスト音を再生中です。停止ボタンで止めてください。"); } });
+  $("stopTestBtn").addEventListener("click", () => { if (!activeAlarm) stopSound(); });
+  $("volume").addEventListener("input", () => $("volumeText").textContent = `${$("volume").value}%`);
+  $("upBtn").addEventListener("click", () => {
+    completedDate = dateKey();
+    localStorage.setItem("wakeAlarmCompletedDate", completedDate);
+    closeAlarm("今日は起床済みです。今日の残りのアラームを取り消しました。");
+    storeLog("起床済みボタンを押した");
+  });
+  $("resetDayBtn").addEventListener("click", () => {
+    if (confirm("今日の起床済み状態を解除しますか？")) {
+      completedDate = ""; localStorage.removeItem("wakeAlarmCompletedDate");
+      showStatus("今日の起床済み状態を解除しました。設定されたアラームが再び有効です。");
+    }
+  });
+  $("stopPrelimBtn").addEventListener("click", () => {
+    if (activeAlarm?.type === "prelim") {
+      const when = activeAlarm.timeKey;
+      closeAlarm("予備アラームを停止しました。本アラームは取り消されていません。");
+      storeLog(`予備アラームを停止（${when}）`);
+    }
+  });
+  $("answerForm").addEventListener("submit", e => {
+    e.preventDefault();
+    if (activeAlarm?.type !== "main") return;
+    if (Number($("answer").value) === mathAnswer) {
+      streak++; $("streak").textContent = `${streak} / 3`; $("mathFeedback").textContent = "正解！";
+      if (streak >= 3) {
+        closeAlarm("計算問題を3問連続で正解しました。本アラームを停止しました。");
+        storeLog("計算問題3問連続正解で本アラーム停止");
+      } else newQuestion();
+    } else {
+      streak = 0; $("streak").textContent = "0 / 3"; $("mathFeedback").textContent = "不正解。連続正解数が0に戻りました。もう一度！";
+      newQuestion();
+    }
+  });
+  $("clearLogBtn").addEventListener("click", () => {
+    if (confirm("起床記録をすべて消去しますか？")) { logEntries=[]; localStorage.removeItem("wakeAlarmLog"); renderLog(); }
+  });
+  if (saved) applySettings(saved);
+  makeSchedule(); renderLog();
+  setInterval(checkDueAlarms, 1000);
+  checkDueAlarms();
+})();
+</script>
+</body>
+</html>
